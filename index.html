@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Instant CPS Calculator</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: #121212;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 40px;
+      width: 90%;
+      max-width: 1200px;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    button {
+      font-size: 1.5rem;
+      padding: 20px 60px;
+      border: none;
+      border-radius: 10px;
+      background: #1e1e1e;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    button:active {
+      transform: scale(0.97);
+    }
+    .sidebar {
+      width: 300px;
+      background: #1b1b1b;
+      padding: 20px;
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    .graph-container {
+      width: 90%;
+      max-width: 1000px;
+      margin-top: 40px;
+    }
+    h1, h2, p {
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="controls">
+      <h1 id="cps">CPS: 0</h1>
+      <button id="clickButton">Click Me!</button>
+    </div>
+    <div class="sidebar">
+      <h2>Stats</h2>
+      <p id="avgCps">Average CPS: 0</p>
+      <p id="maxCps">Highest CPS: 0</p>
+      <p id="leftClicks">Left Clicks: 0</p>
+      <p id="rightClicks">Right Clicks: 0</p>
+      <label for="topPercent">Top % CPS:</label>
+      <input type="number" id="topPercent" value="20" min="1" max="100">
+      <p id="topCps">Top 20% CPS Avg: 0</p>
+    </div>
+  </div>
+  <div class="graph-container">
+    <canvas id="cpsChart"></canvas>
+  </div>
+  <script>
+    const clickButton = document.getElementById("clickButton");
+    const cpsDisplay = document.getElementById("cps");
+    const avgCpsDisplay = document.getElementById("avgCps");
+    const maxCpsDisplay = document.getElementById("maxCps");
+    const leftClicksDisplay = document.getElementById("leftClicks");
+    const rightClicksDisplay = document.getElementById("rightClicks");
+    const topPercentInput = document.getElementById("topPercent");
+    const topCpsDisplay = document.getElementById("topCps");
+
+    let lastClick = null;
+    let intervals = [];
+    let cpsValues = [];
+    let maxCps = 0;
+    let leftClicks = 0;
+    let rightClicks = 0;
+    let timeoutId = null;
+
+    const ctx = document.getElementById('cpsChart').getContext('2d');
+    const cpsChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'CPS Over Time',
+          data: [],
+          borderColor: '#00bfff',
+          borderWidth: 2,
+          tension: 0.3,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            title: { display: true, text: 'Click Count' },
+            ticks: { color: '#e0e0e0' }
+          },
+          y: {
+            title: { display: true, text: 'CPS' },
+            ticks: { color: '#e0e0e0' }
+          }
+        },
+        plugins: {
+          legend: { labels: { color: '#e0e0e0' } }
+        }
+      }
+    });
+
+    function updateStats() {
+      if (!intervals.length) {
+        avgCpsDisplay.textContent = `Average CPS: 0`;
+        return;
+      }
+      const avgCps = cpsValues.reduce((a,b) => a+b,0)/cpsValues.length;
+      avgCpsDisplay.textContent = `Average CPS: ${avgCps.toFixed(2)}`;
+      maxCpsDisplay.textContent = `Highest CPS: ${maxCps.toFixed(2)}`;
+      updateTopCps();
+    }
+
+    function updateTopCps() {
+      const percent = parseInt(topPercentInput.value);
+      if (!cpsValues.length) {
+        topCpsDisplay.textContent = `Top ${percent}% CPS Avg: 0`;
+        return;
+      }
+      const sorted = [...cpsValues].sort((a,b)=>b-a);
+      const count = Math.ceil(sorted.length * percent / 100);
+      const avgTop = sorted.slice(0,count).reduce((a,b)=>a+b,0)/count;
+      topCpsDisplay.textContent = `Top ${percent}% CPS Avg: ${avgTop.toFixed(2)}`;
+    }
+
+    topPercentInput.addEventListener('input', updateTopCps);
+
+    function handleClick(button) {
+      const now = performance.now();
+      if (button===0) leftClicks++;
+      if (button===2) rightClicks++;
+      leftClicksDisplay.textContent = `Left Clicks: ${leftClicks}`;
+      rightClicksDisplay.textContent = `Right Clicks: ${rightClicks}`;
+      if (lastClick) {
+        const diff = (now - lastClick)/1000;
+        if (diff <= 0.15) {
+          intervals.push(diff);
+          const cps = 1/diff;
+          cpsValues.push(cps);
+          if (cps > maxCps) maxCps = cps;
+          cpsDisplay.textContent = `CPS: ${cps.toFixed(2)}`;
+          cpsChart.data.labels.push(cpsValues.length);
+          cpsChart.data.datasets[0].data.push(cps);
+          cpsChart.update();
+        }
+      }
+      lastClick = now;
+      updateStats();
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(()=>{
+        cpsDisplay.textContent = `CPS: 0`;
+      },500);
+    }
+
+    clickButton.addEventListener('click',()=>handleClick(0));
+    window.addEventListener('contextmenu',e=>{e.preventDefault();handleClick(2);});
+  </script>
+</body>
+</html>
